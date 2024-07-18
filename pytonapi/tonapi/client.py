@@ -1,227 +1,113 @@
-import json
 import logging
 import time
-from typing import Any, Dict, Optional, Generator
+from typing import Optional, Dict, Any
 
-import httpx
+import requests
+from requests import Response, JSONDecodeError
 
-from pytonapi.exceptions import (
-    TONAPIBadRequestError,
-    TONAPIError,
-    TONAPIInternalServerError,
-    TONAPINotFoundError,
-    TONAPIUnauthorizedError,
-    TONAPITooManyRequestsError,
-    TONAPINotImplementedError
-)
+from pytonapi.exceptions import (TONAPIBadRequestError,
+                                 TONAPIError, TONAPIInternalServerError,
+                                 TONAPINotFoundError, TONAPIUnauthorizedError,
+                                 TONAPITooManyRequestsError)
 
 
 class TonapiClient:
-    """
-    Synchronous TON API Client.
-    """
 
-    def __init__(
-            self,
-            api_key: str,
-            is_testnet: Optional[bool] = False,
-            max_retries: Optional[int] = None,
-            base_url: Optional[str] = None,
-            headers: Optional[Dict[str, Any]] = None,
-            timeout: Optional[float] = None,
-    ) -> None:
-        """
-        Initialize the TonapiClient.
+    def __init__(self, api_key: str, testnet: bool = False, max_retries: int = 3):
+        self._api_key = api_key
+        self._testnet = testnet
+        self._max_retries = max_retries
 
-        :param api_key: The API key.
-        :param base_url: The base URL for the API.
-        :param is_testnet: Use True if using the testnet.
-        :param timeout: Request timeout in seconds.
-        :param headers: Additional headers to include in requests.
-        :param max_retries: Maximum number of retries per request if rate limit is reached.
-        """
-        self.api_key = api_key
-        self.is_testnet = is_testnet
-        self.timeout = timeout
-        self.max_retries = max_retries
-
-        self.base_url = base_url or "https://tonapi.io/" if not is_testnet else "https://testnet.tonapi.io/"
-        self.headers = headers or {"Authorization": f"Bearer {api_key}"}
+        self.__headers = {'Authorization': f'Bearer {api_key}'}
+        self.__base_url = "https://testnet.tonapi.io/" if testnet else "https://tonapi.io/"
 
     @staticmethod
-    def __read_content(response: httpx.Response) -> Any:
-        """
-        Read the response content.
-
-        :param response: The HTTP response object.
-        :return: The response content.
-        """
-        try:
-            content = response.json()
-        except (httpx.ResponseNotRead, json.JSONDecodeError):
-            content = {"error": response.text}
-        except Exception as e:
-            raise TONAPIError(f"Failed to read response content: {e}")
-
-        return content
-
-    def __process_response(self, response: httpx.Response) -> Dict[str, Any]:
-        """
-        Process the HTTP response and handle errors.
-
-        :param response: The HTTP response object.
-        :return: The response content as a dictionary.
-        :raises TONAPIError: If there is an error status code in the response.
-        """
-        content = self.__read_content(response)
-
-        if response.status_code != 200:
-            error_map = {
-                400: TONAPIBadRequestError,
-                401: TONAPIUnauthorizedError,
-                403: TONAPIInternalServerError,
-                404: TONAPINotFoundError,
-                429: TONAPITooManyRequestsError,
-                500: TONAPIInternalServerError,
-                501: TONAPINotImplementedError,
-            }
-            error_class = error_map.get(response.status_code, TONAPIError)
-            error_message = content.get("error") if isinstance(content, dict) else content
-            raise error_class(error_message)
-
-        return content
-
-    def _subscribe(
-            self,
-            method: str,
-            params: Optional[Dict[str, Any]],
-    ) -> Generator[str, None, None]:
-        """
-        Subscribe to an SSE event stream.
-
-        :param method: The API method to subscribe to.
-        :param params: Optional parameters for the API method.
-        """
-        url = self.base_url + method
-        timeout = httpx.Timeout(timeout=self.timeout)
-        data = {"headers": self.headers, "params": params, "timeout": timeout}
+    def __process_response(response: Response) -> Any:
+        status_code = response.status_code
 
         try:
-            with httpx.stream("GET", url=url, **data) as response:
-                if response.status_code != 200:
-                    self.__process_response(response)
-                for line in response.iter_lines():
-                    try:
-                        key, value = line.split(": ", 1)
-                    except ValueError:
-                        continue
-                    if value == "heartbeat":
-                        continue
-                    if key == "data":
-                        yield value
-        except httpx.LocalProtocolError:
+            response = response.json()
+            error = response.get('error', response)
+        except JSONDecodeError:
+            error = response.text
+            response = True if status_code == 200 else False
+
+        if status_code == 200:
+            return response
+        elif status_code == 400:
+            raise TONAPIBadRequestError(error)
+        elif status_code == 401:
             raise TONAPIUnauthorizedError
+        elif status_code == 404:
+            raise TONAPINotFoundError
+        elif status_code == 429:
+            raise TONAPITooManyRequestsError(error)
+        elif status_code == 500:
+            raise TONAPIInternalServerError(error)
+        else:
+            raise TONAPIError(error)
 
-    def _request(
-            self,
-            method: str,
-            path: str,
-            headers: Optional[Dict[str, Any]] = None,
-            params: Optional[Dict[str, Any]] = None,
-            body: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """
-        Make an HTTP request.
-
-        :param method: The HTTP method (GET or POST).
-        :param path: The API path.
-        :param headers: Optional headers to include in the request.
-        :param params: Optional query parameters.
-        :param body: Optional request body data.
-        :return: The response content as a dictionary.
-        """
-        url = self.base_url + path
-        self.headers.update(headers or {})
-        timeout = httpx.Timeout(timeout=self.timeout)
-        try:
-            with httpx.Client(headers=self.headers, timeout=timeout) as session:
-                session: httpx.Client
-                data = {"params": params or {}, "json": body or {}}
-                response = session.request(method=method, url=url, **data)
-                return self.__process_response(response)
-        except httpx.LocalProtocolError:
-            raise TONAPIUnauthorizedError
-
-    def _request_retries(
-            self,
-            method: str,
-            path: str,
-            headers: Optional[Dict[str, Any]] = None,
-            params: Optional[Dict[str, Any]] = None,
-            body: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """
-        Make an HTTP request with retries if rate limit is reached.
-
-        :param method: The HTTP method (GET or POST).
-        :param path: The API path.
-        :param headers: Optional headers to include in the request.
-        :param params: Optional query parameters.
-        :param body: Optional request body data.
-        :return: The response content as a dictionary.
-        """
-        for i in range(self.max_retries):
+    def __retry(self, request: callable, *args, **kwargs):
+        for i in range(self._max_retries):
             try:
-                return self._request(
-                    method=method,
-                    path=path,
-                    headers=headers,
-                    params=params,
-                    body=body,
-                )
+                response = request(*args, **kwargs)
+                return self.__process_response(response)
             except TONAPITooManyRequestsError:
                 logging.warning(
-                    f"Rate limit exceeded. "
-                    f"Retrying {i + 1}/{self.max_retries} is in progress."
+                    f"Rate limit exceeded. Retrying "
+                    f"{i + 1}/{self._max_retries} is in progress."
                 )
                 time.sleep(1)
         raise TONAPITooManyRequestsError
 
-    def _get(
-            self,
-            method: str,
-            params: Optional[Dict[str, Any]] = None,
-            headers: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    def _get(self, method: str, params: Optional[Dict[str, Any]] = None,
+             headers: Optional[Dict[str, Any]] = None,
+             ) -> Dict[str, Any]:
         """
-        Make a GET request.
+        Send a GET request to the TONAPI.
 
-        :param method: The API method.
-        :param params: Optional query parameters.
-        :param headers: Optional headers to include in the request.
-        :return: The response content as a dictionary.
-        """
-        request = self._request
-        if self.max_retries:
-            request = self._request_retries
-        return request("GET", method, headers, params=params)
+        :param method: The API method to call.
+        :param params: The query parameters to include in the request.
+        :param headers: The headers to include in the request.
+        :return: The response data.
 
-    def _post(
-            self,
-            method: str,
-            params: Optional[Dict[str, Any]] = None,
-            body: Optional[Dict[str, Any]] = None,
-            headers: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        :raises TONAPIBadRequestError: Raised when the client sends a bad request (HTTP 400).
+        :raises TONAPIUnauthorizedError: Raised when the client is not authorized to access a resource (HTTP 401).
+        :raises TONAPINotFoundError: Raised when the requested resource is not found (HTTP 404).
+        :raises TONAPITooManyRequestsError: Raised when the rate limit is exceeded (HTTP 429).
+        :raises TONAPIInternalServerError: Raised when the server encounters an internal error (HTTP 500).
+        :raises TONAPIError: Raised when the response contains an error.
         """
-        Make a POST request.
+        params = params.copy() if params else {}
+        headers.update(self.__headers) if headers else ...
+        headers = headers or self.__headers
 
-        :param method: The API method.
-        :param body: The request body data.
-        :param headers: Optional headers to include in the request.
-        :return: The response content as a dictionary.
+        with requests.Session() as session:
+            url = f"{self.__base_url}{method}"
+            return self.__retry(session.get, url=url, params=params, headers=headers)
+
+    def _post(self, method: str, body: Optional[Dict[str, Any]] = None,
+              headers: Optional[Dict[str, Any]] = None
+              ) -> Dict[str, Any]:
         """
-        request = self._request
-        if self.max_retries:
-            request = self._request_retries
-        return request("POST", method, headers, params=params, body=body)
+        Send a POST request to the TONAPI.
+
+        :param method: The API method to call.
+        :param body: The request parameters to include in the request body.
+        :param headers: The headers to include in the request.
+        :return: The response data.
+
+        :raises TONAPIBadRequestError: Raised when the client sends a bad request (HTTP 400).
+        :raises TONAPIUnauthorizedError: Raised when the client is not authorized to access a resource (HTTP 401).
+        :raises TONAPINotFoundError: Raised when the requested resource is not found (HTTP 404).
+        :raises TONAPITooManyRequestsError: Raised when the rate limit is exceeded (HTTP 429).
+        :raises TONAPIInternalServerError: Raised when the server encounters an internal error (HTTP 500).
+        :raises TONAPIError: Raised when the response contains an error.
+        """
+        body = body.copy() if body else {}
+        headers.update(self.__headers) if headers else ...
+        headers = headers or self.__headers
+
+        with requests.Session() as session:
+            url = f"{self.__base_url}{method}"
+            return self.__retry(session.post, url=url, headers=headers, json=body)

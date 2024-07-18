@@ -6,19 +6,6 @@ from pytonapi.schema._address import Address
 from pytonapi.schema._balance import Balance
 
 
-class AddressFormB64(BaseModel):
-    b64: str
-    b64url: str
-
-
-class AddressForm(BaseModel):
-    raw_form: str
-    bounceable: AddressFormB64
-    non_bounceable: AddressFormB64
-    given_type: str
-    test_only: bool
-
-
 class Account(BaseModel):
     address: Address
     balance: Balance
@@ -30,8 +17,6 @@ class Account(BaseModel):
     icon: Optional[str]
     memo_required: Optional[bool]
     get_methods: List[str]
-    is_suspended: Optional[bool]
-    is_wallet: bool
 
 
 class Accounts(BaseModel):
@@ -43,7 +28,6 @@ class AccountAddress(BaseModel):
     name: Optional[str]
     is_scam: bool
     icon: Optional[str]
-    is_wallet: bool
 
 
 class FoundAccount(BaseModel):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict
 
 from pydantic.v1 import BaseModel
 
@@ -73,7 +73,9 @@ class ComputePhase(BaseModel):
 
 
 class StateInit(BaseModel):
-    boc: str
+    code: Optional[str]
+    data: Optional[str]
+    library: Dict[str, str]
 
 
 class Message(BaseModel):
@@ -92,7 +94,6 @@ class Message(BaseModel):
     init: Optional[StateInit]
     decoded_op_name: Optional[str]
     decoded_body: Optional[Union[dict, str]]
-    raw_body: Optional[str]
 
 
 class Transaction(BaseModel):
@@ -123,9 +124,7 @@ class Transaction(BaseModel):
 
 class Trace(BaseModel):
     transaction: Transaction
-    interfaces: Optional[List[str]]
     children: Optional[List[Trace]]
-    emulated: Optional[bool]
 
 
 class TraceId(BaseModel):

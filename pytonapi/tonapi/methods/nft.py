@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional
 
 from pytonapi.schema.events import AccountEvents
 from pytonapi.tonapi.client import TonapiClient
@@ -84,7 +84,7 @@ class NftMethod(TonapiClient):
 
         return NftItem(**response)
 
-    def get_bulk_items(self, account_ids: List[str]) -> NftItems:
+    def get_bulk_items(self, account_ids: list[str]) -> NftItems:
         """
         Get NFT items by their addresses
 
@@ -96,16 +96,10 @@ class NftMethod(TonapiClient):
 
         return NftItems(**response)
 
-    def get_nft_history(
-            self,
-            account_id: str,
-            limit: int = 100,
-            before_lt: Optional[int] = None,
-            accept_language: str = "en",
-            subject_only: bool = False,
-            start_date: Optional[int] = None,
-            end_date: Optional[int] = None,
-    ) -> AccountEvents:
+    def get_nft_history(self, account_id: str, limit: int = 100, before_lt: Optional[int] = None,
+                        accept_language: str = "en", subject_only: bool = False,
+                        start_date: Optional[int] = None, end_date: Optional[int] = None
+                        ) -> AccountEvents:
         """
         Get the transfer nfts history for account
 
@@ -120,7 +114,7 @@ class NftMethod(TonapiClient):
         """
         method = f"v2/nfts/{account_id}/history"
         params = {"limit": limit}
-        if before_lt is not None: params["before_lt"] = before_lt  # noqa:E701
+        if before_lt: params["before_lt"] = before_lt  # noqa:E701
         if subject_only: params["subject_only"] = "true"  # noqa:E701
         if start_date: params["start_date"] = start_date  # noqa:E701
         if end_date: params["end_date"] = end_date  # noqa:E701

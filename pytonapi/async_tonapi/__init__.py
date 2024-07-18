@@ -1,111 +1,62 @@
-from typing import Any, Dict, Optional
-
-from pytonapi.async_tonapi import methods
 from pytonapi.async_tonapi.client import AsyncTonapiClient
-
-__all__ = [
-    "AsyncTonapi",
-    "AsyncTonapiClient",
-]
+from pytonapi.async_tonapi.methods.accounts import AccountMethod
+from pytonapi.async_tonapi.methods.blockchain import BlockchainMethod
+from pytonapi.async_tonapi.methods.dns import DnsMethod
+from pytonapi.async_tonapi.methods.events import EventMethod
+from pytonapi.async_tonapi.methods.jettons import JettonMethod
+from pytonapi.async_tonapi.methods.nft import NftMethod
+from pytonapi.async_tonapi.methods.rates import RateMethod
+from pytonapi.async_tonapi.methods.staking import StakingMethod
+from pytonapi.async_tonapi.methods.storage import StorageMethod
+from pytonapi.async_tonapi.methods.traces import TraceMethod
 
 
 class AsyncTonapi(AsyncTonapiClient):
 
-    def __init__(
-            self,
-            api_key: str,
-            is_testnet: Optional[bool] = False,
-            max_retries: Optional[int] = None,
-            base_url: Optional[str] = None,
-            websocket_url: Optional[str] = None,
-            headers: Optional[Dict[str, Any]] = None,
-            timeout: Optional[float] = None,
-    ) -> None:
+    def __init__(self, api_key: str, testnet: bool = False, max_retries: int = 3):
         """
-        Initialize the AsyncTonapiClient.
-
-        :param api_key: The API key.
-        :param base_url: The base URL for the API.
-        :param websocket_url: The URL for the WebSocket server.
-        :param is_testnet: Use True if using the testnet.
-        :param timeout: Request timeout in seconds.
-        :param headers: Additional headers to include in requests.
-        :param max_retries: Maximum number of retries per request if rate limit is reached.
+        :param api_key: You can get an API key here https://tonconsole.com/
+        :param testnet: Use true, if you want to switch to testnet
+        :param max_retries: Maximum number of retries per request if rate limit is reached
         """
-        super().__init__(
-            api_key=api_key,
-            is_testnet=is_testnet,
-            max_retries=max_retries,
-            base_url=base_url,
-            websocket_url=websocket_url,
-            headers=headers,
-            timeout=timeout,
-        )
+        super().__init__(api_key, testnet, max_retries)
 
     @property
-    def blockchain(self) -> methods.BlockchainMethod:
-        return methods.BlockchainMethod(**self.__dict__)
+    def blockchain(self) -> BlockchainMethod:
+        return BlockchainMethod(self._api_key, self._testnet, self._max_retries)
 
     @property
-    def accounts(self) -> methods.AccountsMethod:
-        return methods.AccountsMethod(**self.__dict__)
+    def accounts(self) -> AccountMethod:
+        return AccountMethod(self._api_key, self._testnet, self._max_retries)
 
     @property
-    def jettons(self) -> methods.JettonsMethod:
-        return methods.JettonsMethod(**self.__dict__)
+    def jettons(self) -> JettonMethod:
+        return JettonMethod(self._api_key, self._testnet, self._max_retries)
 
     @property
-    def liteserver(self) -> methods.LiteserverMethod:
-        return methods.LiteserverMethod(**self.__dict__)
+    def dns(self) -> DnsMethod:
+        return DnsMethod(self._api_key, self._testnet, self._max_retries)
 
     @property
-    def dns(self) -> methods.DnsMethod:
-        return methods.DnsMethod(**self.__dict__)
+    def events(self) -> EventMethod:
+        return EventMethod(self._api_key, self._testnet, self._max_retries)
 
     @property
-    def emulate(self) -> methods.EmulateMethod:
-        return methods.EmulateMethod(**self.__dict__)
+    def nft(self) -> NftMethod:
+        return NftMethod(self._api_key, self._testnet, self._max_retries)
 
     @property
-    def events(self) -> methods.EventsMethod:
-        return methods.EventsMethod(**self.__dict__)
+    def rates(self) -> RateMethod:
+        return RateMethod(self._api_key, self._testnet, self._max_retries)
 
     @property
-    def inscriptions(self) -> methods.InscriptionsMethod:
-        return methods.InscriptionsMethod(**self.__dict__)
+    def staking(self) -> StakingMethod:
+        return StakingMethod(self._api_key, self._testnet, self._max_retries)
 
     @property
-    def nft(self) -> methods.NftMethod:
-        return methods.NftMethod(**self.__dict__)
+    def storage(self) -> StorageMethod:
+        return StorageMethod(self._api_key, self._testnet, self._max_retries)
 
     @property
-    def rates(self) -> methods.RatesMethod:
-        return methods.RatesMethod(**self.__dict__)
-
-    @property
-    def sse(self) -> methods.SSEMethod:
-        return methods.SSEMethod(**self.__dict__)
-
-    @property
-    def staking(self) -> methods.StakingMethod:
-        return methods.StakingMethod(**self.__dict__)
-
-    @property
-    def storage(self) -> methods.StorageMethod:
-        return methods.StorageMethod(**self.__dict__)
-
-    @property
-    def tonconnect(self) -> methods.TonconnectMethod:
-        return methods.TonconnectMethod(**self.__dict__)
-
-    @property
-    def traces(self) -> methods.TracesMethod:
-        return methods.TracesMethod(**self.__dict__)
-
-    @property
-    def wallet(self) -> methods.WalletMethod:
-        return methods.WalletMethod(**self.__dict__)
-
-    @property
-    def websocket(self) -> methods.WebSocketMethod:
-        return methods.WebSocketMethod(**self.__dict__)
+    def traces(self) -> TraceMethod:
+        return TraceMethod(self._api_key, self._testnet, self._max_retries)

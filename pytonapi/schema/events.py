@@ -4,9 +4,8 @@ from pydantic.v1 import BaseModel
 
 from pytonapi.schema._address import Address
 from pytonapi.schema.accounts import AccountAddress
-from pytonapi.schema.jettons import JettonPreview, JettonQuantity
+from pytonapi.schema.jettons import JettonPreview
 from pytonapi.schema.nft import NftItem, Price
-from pytonapi.schema.traces import Trace
 
 
 class Refund(BaseModel):
@@ -157,30 +156,6 @@ class ActionSimplePreview(BaseModel):
     accounts: List[AccountAddress]
 
 
-class DomainRenewAction(BaseModel):
-    domain: str
-    contract_address: Address
-    renewer: AccountAddress
-
-
-class InscriptionTransferAction(BaseModel):
-    sender: AccountAddress
-    recipient: AccountAddress
-    amount: str
-    comment: Optional[str]
-    type: str
-    ticker: str
-    decimals: int
-
-
-class InscriptionMintAction(BaseModel):
-    recipient: AccountAddress
-    amount: str
-    type: str
-    ticker: str
-    decimals: int
-
-
 class Action(BaseModel):
     type: str
     status: str
@@ -201,14 +176,10 @@ class Action(BaseModel):
     ElectionsRecoverStake: Optional[ElectionsRecoverStakeAction]
     JettonSwap: Optional[JettonSwapAction]
     SmartContractExec: Optional[SmartContractAction]
-    DomainRenew: Optional[DomainRenewAction]
-    InscriptionTransfer: Optional[InscriptionTransferAction]
-    InscriptionMint: Optional[InscriptionMintAction]
     simple_preview: ActionSimplePreview
 
 
 class AccountEvent(BaseModel):
-    description: Optional[str]
     event_id: str
     account: AccountAddress
     timestamp: int
@@ -233,7 +204,7 @@ class ValueFlow(BaseModel):
     account: AccountAddress
     ton: int
     fees: int
-    jettons: Optional[List[ValueFlowJettonsInner]]
+    jettons: Optional[list[ValueFlowJettonsInner]]
 
 
 class Event(BaseModel):
@@ -244,32 +215,3 @@ class Event(BaseModel):
     is_scam: bool
     lt: int
     in_progress: bool
-
-
-class MempoolEventData(BaseModel):
-    boc: str
-
-
-class TraceEventData(BaseModel):
-    accounts: List[Address]
-    hash: str
-
-
-class TransactionEventData(BaseModel):
-    account_id: Address
-    lt: int
-    tx_hash: str
-
-
-class Risk(BaseModel):
-    description: Optional[str] = None
-    transfer_all_remaining_balance: bool
-    ton: int
-    jettons: List[JettonQuantity]
-    nfts: List[NftItem]
-
-
-class MessageConsequences(BaseModel):
-    trace: Trace
-    risk: Risk
-    event: AccountEvent

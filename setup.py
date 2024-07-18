@@ -4,10 +4,10 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="pytonapi",
-    version="0.3.1",
-    author="nessshon",
-    description="Provide access to indexed TON blockchain.",
+    name="pytonapi-oz",
+    version="0.0.1",
+    author="spencerwilf",
+    description="Separate implementation of pytonapi",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/tonkeeper/pytonapi/",

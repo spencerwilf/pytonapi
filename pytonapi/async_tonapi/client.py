@@ -1,273 +1,113 @@
 import asyncio
-import json
 import logging
-from typing import Any, Dict, Optional, AsyncGenerator
+from typing import Any, Dict, Optional
 
-import httpx
-import websockets
+import aiohttp
+from aiohttp import ClientResponse, ContentTypeError
 
-from pytonapi.exceptions import (
-    TONAPIBadRequestError,
-    TONAPIError,
-    TONAPIInternalServerError,
-    TONAPINotFoundError,
-    TONAPIUnauthorizedError,
-    TONAPITooManyRequestsError,
-    TONAPINotImplementedError,
-    TONAPISSEError,
-)
+from pytonapi.exceptions import (TONAPIBadRequestError,
+                                 TONAPIError, TONAPIInternalServerError,
+                                 TONAPINotFoundError, TONAPIUnauthorizedError,
+                                 TONAPITooManyRequestsError)
 
 
 class AsyncTonapiClient:
-    """
-    Asynchronous TON API Client.
-    """
 
-    def __init__(
-            self,
-            api_key: str,
-            is_testnet: Optional[bool] = False,
-            max_retries: Optional[int] = None,
-            base_url: Optional[str] = None,
-            websocket_url: Optional[str] = None,
-            headers: Optional[Dict[str, Any]] = None,
-            timeout: Optional[float] = None,
-    ) -> None:
-        """
-        Initialize the AsyncTonapiClient.
+    def __init__(self, api_key: str, testnet: bool = False, max_retries: int = 3):
+        self._api_key = api_key
+        self._testnet = testnet
+        self._max_retries = max_retries
 
-        :param api_key: The API key.
-        :param base_url: The base URL for the API.
-        :param websocket_url: The URL for the WebSocket server.
-        :param is_testnet: Use True if using the testnet.
-        :param timeout: Request timeout in seconds.
-        :param headers: Additional headers to include in requests.
-        :param max_retries: Maximum number of retries per request if rate limit is reached.
-        """
-        self.api_key = api_key
-        self.is_testnet = is_testnet
-        self.timeout = timeout
-        self.max_retries = max_retries
-
-        self.base_url = base_url or "https://tonapi.io/" if not is_testnet else "https://testnet.tonapi.io/"
-        self.websocket_url = websocket_url or "wss://tonapi.io/v2/websocket"
-        self.headers = headers or {"Authorization": f"Bearer {api_key}"}
+        self.__headers = {'Authorization': f'Bearer {api_key}'}
+        self.__base_url = "https://testnet.tonapi.io/" if testnet else "https://tonapi.io/"
 
     @staticmethod
-    async def __read_content(response: httpx.Response) -> Any:
-        """
-        Read the response content.
+    async def __process_response(response: ClientResponse) -> Any:
+        status_code = response.status
 
-        :param response: The HTTP response object.
-        :return: The response content.
-        """
         try:
-            data = await response.aread()
-            try:
-                content = json.loads(data.decode())
-            except json.JSONDecodeError:
-                content = data.decode()
-        except httpx.ResponseNotRead:
-            content = {"error": response.text}
-        except httpx.ReadError as read_error:
-            content = {"error": f"Read error occurred: {read_error}"}
-        except Exception as e:
-            raise TONAPIError(f"Failed to read response content: {e}")
+            response = await response.json()
+            error = response.get('error', response)
+        except ContentTypeError:
+            error = await response.text()
+            response = True if status_code == 200 else False
 
-        return content
-
-    async def __process_response(self, response: httpx.Response) -> Dict[str, Any]:
-        """
-        Process the HTTP response and handle errors.
-
-        :param response: The HTTP response object.
-        :return: The response content as a dictionary.
-        :raises TONAPIError: If there is an error status code in the response.
-        """
-        content = await self.__read_content(response)
-
-        if response.status_code != 200:
-            error_map = {
-                400: TONAPIBadRequestError,
-                401: TONAPIUnauthorizedError,
-                403: TONAPIInternalServerError,
-                404: TONAPINotFoundError,
-                429: TONAPITooManyRequestsError,
-                500: TONAPIInternalServerError,
-                501: TONAPINotImplementedError,
-            }
-            error_class = error_map.get(response.status_code, TONAPIError)
-            error_message = content.get("error") if isinstance(content, dict) else content
-            raise error_class(error_message)
-
-        return content
-
-    async def _subscribe(
-            self,
-            method: str,
-            params: Optional[Dict[str, Any]],
-    ) -> AsyncGenerator[str, None]:
-        """
-        Subscribe to an SSE event stream.
-
-        :param method: The API method to subscribe to.
-        :param params: Optional parameters for the API method.
-        """
-        url = self.base_url + method
-        timeout = httpx.Timeout(timeout=self.timeout)
-        data = {"headers": self.headers, "params": params, "timeout": timeout}
-
-        async with httpx.AsyncClient() as client:
-            try:
-                async with client.stream("GET", url=url, **data) as response:
-                    response: httpx.Response
-                    response.raise_for_status()
-
-                    async for line in response.aiter_lines():
-                        try:
-                            key, value = line.split(": ", 1)
-                        except ValueError:
-                            continue
-                        if value == "heartbeat":
-                            continue
-                        if key == "data":
-                            yield value
-            except httpx.LocalProtocolError:
-                raise TONAPIUnauthorizedError
-            except httpx.HTTPStatusError as e:
-                raise TONAPISSEError(e)
-
-    async def _subscribe_websocket(
-            self,
-            method: str,
-            params: Any,
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """
-        Subscribe to a WebSocket event stream.
-
-        :param method: The API method to subscribe to.
-        :param params: Parameters for the API method.
-        :return: An asynchronous generator yielding WebSocket event data.
-        """
-        payload = {
-            "id": 1,
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-        }
-        async with websockets.connect(self.websocket_url) as websocket:
-            try:
-                await websocket.send(json.dumps(payload))
-                while True:
-                    message = await websocket.recv()
-                    message_json = json.loads(message)
-                    if "params" in message_json:
-                        value = message_json["params"]
-                        yield value
-            except websockets.exceptions.ConnectionClosed:
-                raise
-
-    async def _request(
-            self,
-            method: str,
-            path: str,
-            headers: Optional[Dict[str, Any]] = None,
-            params: Optional[Dict[str, Any]] = None,
-            body: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """
-        Make an HTTP request.
-
-        :param method: The HTTP method (GET or POST).
-        :param path: The API path.
-        :param headers: Optional headers to include in the request.
-        :param params: Optional query parameters.
-        :param body: Optional request body data.
-        :return: The response content as a dictionary.
-        """
-        url = self.base_url + path
-        self.headers.update(headers or {})
-        timeout = httpx.Timeout(timeout=self.timeout)
-        try:
-            async with httpx.AsyncClient(headers=self.headers, timeout=timeout) as session:
-                session: httpx.AsyncClient
-                data = {"params": params or {}, "json": body or {}}
-                response = await session.request(method=method, url=url, **data)
-                return await self.__process_response(response)
-        except httpx.LocalProtocolError:
+        if status_code == 200:
+            return response
+        elif status_code == 400:
+            raise TONAPIBadRequestError(error)
+        elif status_code == 401:
             raise TONAPIUnauthorizedError
+        elif status_code == 404:
+            raise TONAPINotFoundError
+        elif status_code == 429:
+            raise TONAPITooManyRequestsError(error)
+        elif status_code == 500:
+            raise TONAPIInternalServerError(error)
+        else:
+            raise TONAPIError(error)
 
-    async def _request_retries(
-            self,
-            method: str,
-            path: str,
-            headers: Optional[Dict[str, Any]] = None,
-            params: Optional[Dict[str, Any]] = None,
-            body: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """
-        Make an HTTP request with retries if rate limit is reached.
-
-        :param method: The HTTP method (GET or POST).
-        :param path: The API path.
-        :param headers: Optional headers to include in the request.
-        :param params: Optional query parameters.
-        :param body: Optional request body data.
-        :return: The response content as a dictionary.
-        """
-        for i in range(self.max_retries):
+    async def __retry(self, request: callable, *args, **kwargs):
+        for i in range(self._max_retries):
             try:
-                return await self._request(
-                    method=method,
-                    path=path,
-                    headers=headers,
-                    params=params,
-                    body=body,
-                )
+                async with request(*args, **kwargs) as response:
+                    return await self.__process_response(response)
             except TONAPITooManyRequestsError:
                 logging.warning(
-                    f"Rate limit exceeded. "
-                    f"Retrying {i + 1}/{self.max_retries} is in progress."
+                    f"Rate limit exceeded. Retrying "
+                    f"{i + 1}/{self._max_retries} is in progress."
                 )
                 await asyncio.sleep(1)
-
         raise TONAPITooManyRequestsError
 
-    async def _get(
-            self,
-            method: str,
-            params: Optional[Dict[str, Any]] = None,
-            headers: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    async def _get(self, method: str, params: Optional[Dict[str, Any]] = None,
+                   headers: Optional[Dict[str, Any]] = None,
+                   ) -> Dict[str, Any]:
         """
-        Make a GET request.
+        Send a GET request to the TONAPI.
 
-        :param method: The API method.
-        :param params: Optional query parameters.
-        :param headers: Optional headers to include in the request.
-        :return: The response content as a dictionary.
-        """
-        request = self._request
-        if self.max_retries:
-            request = self._request_retries
-        return await request("GET", method, headers, params=params)
+        :param method: The API method to call.
+        :param params: The query parameters to include in the request.
+        :param headers: The headers to include in the request.
+        :return: The response data.
 
-    async def _post(
-            self,
-            method: str,
-            params: Optional[Dict[str, Any]] = None,
-            body: Optional[Dict[str, Any]] = None,
-            headers: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        :raises TONAPIBadRequestError: Raised when the client sends a bad request (HTTP 400).
+        :raises TONAPIUnauthorizedError: Raised when the client is not authorized to access a resource (HTTP 401).
+        :raises TONAPINotFoundError: Raised when the requested resource is not found (HTTP 404).
+        :raises TONAPITooManyRequestsError: Raised when the rate limit is exceeded (HTTP 429).
+        :raises TONAPIInternalServerError: Raised when the server encounters an internal error (HTTP 500).
+        :raises TONAPIError: Raised when the response contains an error.
         """
-        Make a POST request.
+        params = params.copy() if params else {}
+        headers.update(self.__headers) if headers else ...
+        headers = headers or self.__headers
 
-        :param method: The API method.
-        :param body: The request body data.
-        :param headers: Optional headers to include in the request.
-        :return: The response content as a dictionary.
+        async with aiohttp.ClientSession(headers=headers) as session:
+            url = f"{self.__base_url}{method}"
+            return await self.__retry(session.get, url=url, params=params, ssl=False)
+
+    async def _post(self, method: str, body: Optional[Dict[str, Any]] = None,
+                    headers: Optional[Dict[str, Any]] = None
+                    ) -> Dict[str, Any]:
         """
-        request = self._request
-        if self.max_retries:
-            request = self._request_retries
-        return await request("POST", method, headers, params=params, body=body)
+        Send a POST request to the TONAPI.
+
+        :param method: The API method to call.
+        :param body: The request parameters to include in the request body.
+        :param headers: The headers to include in the request.
+        :return: The response data.
+
+        :raises TONAPIBadRequestError: Raised when the client sends a bad request (HTTP 400).
+        :raises TONAPIUnauthorizedError: Raised when the client is not authorized to access a resource (HTTP 401).
+        :raises TONAPINotFoundError: Raised when the requested resource is not found (HTTP 404).
+        :raises TONAPITooManyRequestsError: Raised when the rate limit is exceeded (HTTP 429).
+        :raises TONAPIInternalServerError: Raised when the server encounters an internal error (HTTP 500).
+        :raises TONAPIError: Raised when the response contains an error.
+        """
+        body = body.copy() if body else {}
+        headers.update(self.__headers) if headers else ...
+        headers = headers or self.__headers
+
+        async with aiohttp.ClientSession(headers=headers) as session:
+            url = f"{self.__base_url}{method}"
+            return await self.__retry(session.post, url=url, json=body, ssl=False)
