@@ -4,8 +4,8 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="pytonapi-oz",
-    version="0.0.1",
+    name="modded-pytonapi",
+    version="0.0.3",
     author="spencerwilf",
     description="Separate implementation of pytonapi",
     long_description=long_description,

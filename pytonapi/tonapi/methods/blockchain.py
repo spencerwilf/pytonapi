@@ -8,6 +8,21 @@ from pytonapi.schema.blockchain import Block, Transactions, Transaction, Validat
 
 class BlockchainMethod(TonapiClient):
 
+    def status(self):
+
+        method = f"v2/status"
+        response = self._get(method=method)
+
+        return response
+    
+
+    def get_masterchain_shards(self, seqno: int):
+
+        method = f"v2/blockchain/masterchain/{seqno}/shards"
+        response = self._get(method=method)
+
+        return response
+
     def get_block_data(self, block_id: str) -> Block:
         """
         Get block data.
